@@ -1,0 +1,217 @@
+Basics of SQL Server Memory Architecture
+
+
+1. 32-Bit SQL Server memory architecture 
+
+In the Win32 memory architecture, each process has a 4 GB virtual address space. By default, 2 GB of that address space is accessible from user mode(Application like SQL Server) and the remaining 2 GB is accessible from kernel mode
+
+So in 32 Bit windows architecture 2 GB of memory is maximum available for SQL Server. 
+Note: When /3GB switch is enabled user mode address space becomes 3GB and kernel mode becomes 1 GB. When 32-Bit SQL Server is running on 64-Bit windows (WOW64) It gets 4GB of user address space .It can also leverage AWE on WOW64 mode and can use more than 4GB.
+
+memoryarchix86
+
+ 
+
+SQL Server "User address space" is broken into two regions: MemToLeave and Buffer Pool
+
+Size of MemToLeave (MTL) and Buffer Pool (BPool) is determined by SQL Server during start up as below.
+
+MTL (Memory to Leave)= (Stack size * max worker threads) + Additional space (By default 256 MB and can be controlled by -g). 
+Stack size =512 KB per thread for 32 Bit SQL Server 
+I.e = (256 *512 KB) + 256MB =384MB
+
+Additional space to load Dll’s= 256 MB from SQLServer2000. This space is used to store
+
+1. COM objects
+
+2. Extended stored procedure
+
+3. Memory allocated by linked servers (loaded in process ) or other Dll’s loaded  in SQL Server proce
+
+4. Memory allocated by SQL Server memory manger if the allocation size in greater than 8K and need’s contiguous memory (Multiple_pages_kb).
+
+5. SQLCLR
+
+Note: Additional space to load Dll’s can be modified using -g startup parameter.
+
+on any machine with less than 4 processors the Maximum worker Thread’s is 
+always 256 by default (unless we change the value using SP_configure)
+
+ 
+
+ 
+
+SQL Server Buffer Pool is minimum of “Physical RAM “ or “user mode memory(2GB or 3GB) – MTL-  BUF structures”
+
+BPool = Minimum (Physical memory, User address space – MTL) – BUF structures
+
+
+
+To ensure MemToLeave allocations are contiguous SQL Server reserves MTL first, then all the buffer pool regions and finally free MemtoLeave region.
+
+ 
+
+What is in BPOOL? 
+Data Pages/Index pages and Memory allocated by SQL Server memory  manager, which is accounted for  any of below memory clerk’s. If the memory
+
+request is <= 8 KB
+
+CACHESTORE_PHDR 
+CACHESTORE_XMLDBTYPE 
+CACHESTORE_EVENTS 
+MEMORYCLERK_SQLSTORENG 
+MEMORYCLERK_XE 
+CACHESTORE_XPROC 
+OBJECTSTORE_SNI_PACKET 
+CACHESTORE_BROKERRSB 
+OBJECTSTORE_SERVICE_BROKER 
+MEMORYCLERK_SQLSERVICEBROKERTRANSPORT 
+MEMORYCLERK_XE_BUFFER 
+CACHESTORE_XMLDBATTRIBUTE 
+MEMORYCLERK_SQLOPTIMIZER 
+USERSTORE_OBJPERM 
+USERSTORE_TOKENPERM 
+CACHESTORE_FULLTEXTSTOPLIST 
+MEMORYCLERK_SQLGENERAL 
+MEMORYCLERK_SQLHTTP 
+CACHESTORE_NOTIF 
+CACHESTORE_XMLDBELEMENT 
+OBJECTSTORE_LOCK_MANAGER 
+MEMORYCLERK_SQLBUFFERPOOL 
+MEMORYCLERK_SQLSOAP 
+MEMORYCLERK_TRACE_EVTNOTIF 
+CACHESTORE_CONVPRI 
+MEMORYCLERK_QSRANGEPREFETCH 
+CACHESTORE_BROKERREADONLY 
+MEMORYCLERK_SQLCLRASSEMBLY 
+MEMORYCLERK_SOSNODE 
+CACHESTORE_STACKFRAMES 
+MEMORYCLERK_SQLCONNECTIONPOOL 
+MEMORYCLERK_SQLSERVICEBROKER 
+CACHESTORE_OBJCP 
+MEMORYCLERK_SQLQUERYPLAN 
+OBJECTSTORE_SECAUDIT_EVENT_BUFFER 
+OBJECTSTORE_LBSS 
+MEMORYCLERK_FULLTEXT 
+CACHESTORE_TEMPTABLES 
+CACHESTORE_BROKERTBLACS 
+MEMORYCLERK_SQLXML 
+USERSTORE_SXC 
+MEMORYCLERK_BHF 
+CACHESTORE_SQLCP 
+CACHESTORE_SYSTEMROWSET 
+USERSTORE_SCHEMAMGR 
+MEMORYCLERK_SQLQUERYCOMPILE 
+CACHESTORE_BROKERTO 
+CACHESTORE_BROKERKEK 
+MEMORYCLERK_SNI 
+MEMORYCLERK_FULLTEXT_SHMEM 
+CACHESTORE_BROKERUSERCERTLOOKUP 
+USERSTORE_DBMETADATA 
+CACHESTORE_VIEWDEFINITIONS 
+MEMORYCLERK_SQLQUERYEXEC 
+CACHESTORE_BROKERDSH 
+MEMORYCLERK_SQLSOAPSESSIONSTORE 
+MEMORYCLERK_SQLQERESERVATIONS 
+MEMORYCLERK_HOST 
+MEMORYCLERK_SQLXP 
+MEMORYCLERK_SQLUTILITIES
+
+ 
+
+What is in MTL(Non-Bpool)? 
+
+COM Objects 
+SQL Server CLR 
+Memory allocated by Linked Server OLEDB Providers and third party DLL’s loaded in SQL Server process 
+Extended Stored Procedures: 
+Network Packets 
+Memory consumed by memory managers. If the memory request is > 8 KB and needs contiguous allocation.
+
+ 
+
+
+What is BUF structures? 
+SQL Server maintains a BUF structure for each page. This structure is used to track status information associated with each buffer, such as the buffer latch, a pointer to the actual 8 KB page, status bits that indicate whether the page is dirty, has an IO in progress etc. 
+Note: When AWE is enabled BUF structure is maintained for entire RAM to adjust Max server memory with out restarting SQL Server.
+
+What is PAE? 
+PAE is the added ability of the 32 Bit processor to address more than 4 GB of physical memory. Enable /PAE 
+in boot.ini to make operating system take advantage of physical memory over 4GB in system.
+
+What is AWE in SQL Server? 
+
+When AWE is enabled, SQL Sever 32-Bit will be able to address more than 4 GB of physical memory using AWE allocator API’s.
+
+Note:  In 32-Bit SQL Server Only data pages an index pages can be placed in AWE memory. So the memory available for other SQL Server memory objects is still limited to user address apace.
+
+Memory allocated using  AWE allocator API’s are not part of Process working set ,hence can not be paged out and not visible in as private bytes or working set in task manger and perfmon. 
+Lock pages in memory privilege is required for startup account of SQL Server to use AWE allocator API’s. 
+In 64-Bit systems sp_configure ‘awe enabled’ does not have any functionality, If you have LPM privilege for Startup account of SQL Server AWE allocator API’s are used to allocate memory.   
+
+What is /3GB Switch?
+
+/3GB switch is used in the Boot.ini file.
+
+When we enable /3GB. User address space of SQL Server or any application that uses IMAGE_FILE_LARGE_ADDRESS_AWARE will increase to 3GB restricting kernel-mode address space to 1GB.
+
+When the physical RAM in the system exceeds 16 GB and the /3GB switch is used, the operating system will ignore the additional RAM until the /3GB switch is removed. This is because of the increased size of the kernel required to support more Page table Entries
+
+ 
+
+How AWE works and What are AWE allocator APIS? 
+
+AWE API’s enables  programs to address more memory than the 4 GB that is available through standard 32-bit addressing.
+
+How AWE APIS’s are used ? 
+Allocate address space for mapping AWE pages.  
+ADD=VirtualAlloc(lpaddress,size,MEM_RESERVE | MEM_PHYSICAL,PAGE_READWRITE); 
+Allocate physical memory which can not to paged.  
+bResult=AllocateUserPhysicalPages(GetCurrentProcess(),&sizemap,aRAMPages); 
+MAP a view of that page into your address space, 
+bResult=MapUserPhysicalPages(ADD,sizemap,aRAMPages);
+
+ 
+
+2. 64-Bit SQL Server memory architecture 
+
+In the 64-Bit windows each process gets up to 8 TB of address space, Hence there was no need for SQL Server to leave certain amount of addressable memory for Non-Bpool allocations.
+
+ 
+
+There are three types of memory model’s in 64-Bit SQL Server.
+
+1. Conventional – Normal physical page size (4 / 8KB),memory can be paged, dynamic 
+2. Locked – Normal physical page size (4 / 8KB), Bpool can not be paged, dynamic, Requires startup account of SQL Server to have "Lock pages in memory" privilege,Memory is allocated by  using Address Windowing Extensions (AWE) API’s 
+3. Large – Large physical page size ( > = 2MB), Non-pageable, static, Memory is committed at startup,”Max server memory” is recommended, requires startup account of SQL Server to have "Lock pages in memory" privilege and TF834 (Supported only in enterprise edition on systems with physical memory  >8GB)
+
+Memory calculations in 64-Bit SQL Server are straight forward. 
+SQL Server calculates the size of RAM during the startup and reserve it , minimum of (reserved space, “Max server memory”) is used as Bpool.
+
+Similar to 32-Bit SQL Server, there will be memory allocations outside Bpool in 64-Bit SQL Server , which is called as Non-Bpool allocations.
+
+Who allocates memory outside Bpool?
+
+1. COM Objects 
+2. SQL Server CLR 
+3. Memory allocated by Linked Server OLEDB Providers and third party DLL’s loaded in SQL Server process 
+4. Extended Stored Procedures: 
+5. Network Packets 
+6. Memory consumed by memory managers. If the memory request is greater than 8 KB and needs contiguous allocation.  
+7. Backup
+
+8. Memory for threads (stack size is 2 MB in 64-BIT SQL)
+
+Max server memory controls only the Bpool, it doesn’t control Non-Bpool allocations, this is the reason for SQL Server’s memory usage being greater than "Max Server memory".
+
+Key points:
+
+1. When “Lock pages in memory is used” operating system can not page out Bpool, Non-Bpool allocations can still be paged.
+
+2.  SP_configure “awe enabled” option doesn’t have any use in 64-Bit SQL Server.
+
+3. “Max Server Memory” limits only Bpool, hence SQL Server memory usage will be greater than “Max server memory”
+
+4.  If your operating system is windows2003 (Windows2008 is your call) make sure you cap the SQL Server MAX Server Memory after considering the memory required by other applications, Operating system, Drivers , SQL Server Non- Bpool allocations etc.
+
+Note: Above architecture is applicable till SQL Server 2008 R2. SQL Server 2012 (Denali) has made many changes to the memory manager to govern the SQL Server memory consumption in efficient way compared with earlier versions. To learn SQL Server 2012 Memory refer 
